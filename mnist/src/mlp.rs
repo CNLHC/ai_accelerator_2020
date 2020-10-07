@@ -29,7 +29,8 @@ pub struct MNISTMlp {
     y_train: NdArray,
     x_test: NdArray,
     y_test: NdArray,
-    weight: Arc<RwLock<NdArray>>,
+    hidden1: Arc<RwLock<NdArray>>,
+    hidden2: Arc<RwLock<NdArray>>,
     biased: Arc<RwLock<NdArray>>,
 }
 
@@ -42,38 +43,42 @@ impl MNISTModel for MNISTMlp {
             y_train: y_train,
             x_test: x_test,
             y_test: y_test,
-            weight: array::into_shared(rng.glorot_uniform(&[28 * 28, 10])),
+            hidden1: array::into_shared(rng.glorot_uniform(&[28 * 28, 128])),
+            hidden2: array::into_shared(rng.glorot_uniform(&[128, 10])),
             biased: array::into_shared(array::zeros(&[1, 10])),
         };
         return model;
     }
 
     fn load_model(&mut self) -> Result<(), std::io::Error> {
-        self.weight =
-            array::into_shared(NdArray::read_npy(File::open("./weight.npy")?).expect("err"));
+        self.hidden1 =
+            array::into_shared(NdArray::read_npy(File::open("./hidden1.npy")?).expect("err"));
+        self.hidden2 =
+            array::into_shared(NdArray::read_npy(File::open("./hidden2.npy")?).expect("err"));
         self.biased =
             array::into_shared(NdArray::read_npy(File::open("./biased.npy")?).expect("err"));
         Ok(())
     }
 
     fn train(&self) {
-        let adam_state = adam::AdamState::new(&[&self.weight, &self.biased]);
-        let max_epoch = 3;
-        let batch_size = 200isize;
+        let adam_state = adam::AdamState::new(&[&self.hidden1, &self.hidden2, &self.biased]);
+        let max_epoch = 5;
+        let batch_size = 50isize;
         let num_samples = self.x_train.shape()[0];
         let num_batches = num_samples / batch_size as usize;
 
         for epoch in 0..max_epoch {
             ag::with(|g| {
-                let w = g.variable(self.weight.clone());
+                let h1 = g.variable(self.hidden1.clone());
+                let h2 = g.variable(self.hidden2.clone());
                 let b = g.variable(self.biased.clone());
                 let (x, y) = inputs(g);
-                let z = g.matmul(x, w) + b;
+                let z = g.matmul(g.relu(g.matmul(x, h1)), h2) + b;
                 let loss = g.sparse_softmax_cross_entropy(z, &y);
                 let mean_loss = g.reduce_mean(loss, &[0], false);
-                let grads = &g.grad(&[&mean_loss], &[w, b]);
+                let grads = &g.grad(&[&mean_loss], &[h1, h2, b]);
                 let update_ops: &[Tensor] =
-                    &adam::Adam::default().compute_updates(&[w, b], grads, &adam_state, g);
+                    &adam::Adam::default().compute_updates(&[h1, h2, b], grads, &adam_state, g);
 
                 for i in get_permutation(num_batches) {
                     let i = i as isize * batch_size;
@@ -85,9 +90,15 @@ impl MNISTModel for MNISTMlp {
             });
         }
 
-        match self.weight.try_read() {
+        match self.hidden1.try_read() {
             Ok(arr) => (*arr)
-                .write_npy(File::create("weight.npy").expect("err"))
+                .write_npy(File::create("hidden1.npy").expect("err"))
+                .expect("err"),
+            Err(_) => {}
+        }
+        match self.hidden2.try_read() {
+            Ok(arr) => (*arr)
+                .write_npy(File::create("hidden2.npy").expect("err"))
                 .expect("err"),
             Err(_) => {}
         }
@@ -103,10 +114,11 @@ impl MNISTModel for MNISTMlp {
     fn validate(&self) -> f64 {
         let mut res: f64 = 0.0;
         ag::with(|g| {
-            let w = g.variable(self.weight.clone());
+            let h1 = g.variable(self.hidden1.clone());
+            let h2 = g.variable(self.hidden2.clone());
             let b = g.variable(self.biased.clone());
             let (x, y) = inputs(g);
-            let z = g.matmul(x, w) + b;
+            let z = g.matmul(g.relu(g.matmul(x, h1)), h2) + b;
             let predictions = g.argmax(z, -1, true);
             let accuracy = g.reduce_mean(&g.equal(predictions, &y), &[0, 1], false);
             res = accuracy
