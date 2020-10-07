@@ -62,8 +62,8 @@ impl MNISTModel for MNISTMlp {
 
     fn train(&self) {
         let adam_state = adam::AdamState::new(&[&self.hidden1, &self.hidden2, &self.biased]);
-        let max_epoch = 5;
-        let batch_size = 50isize;
+        let max_epoch = 3;
+        let batch_size = 25isize;
         let num_samples = self.x_train.shape()[0];
         let num_batches = num_samples / batch_size as usize;
 
@@ -75,7 +75,9 @@ impl MNISTModel for MNISTMlp {
                 let (x, y) = inputs(g);
                 let z = g.matmul(g.relu(g.matmul(x, h1)), h2) + b;
                 let loss = g.sparse_softmax_cross_entropy(z, &y);
-                let mean_loss = g.reduce_mean(loss, &[0], false);
+                let mean_loss = g
+                    .reduce_mean(loss, &[0], false)
+                    .raw_hook(|arr| println!("{:?}", arr[0]));
                 let grads = &g.grad(&[&mean_loss], &[h1, h2, b]);
                 let update_ops: &[Tensor] =
                     &adam::Adam::default().compute_updates(&[h1, h2, b], grads, &adam_state, g);
