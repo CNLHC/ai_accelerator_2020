@@ -1,0 +1,17 @@
+[package]
+name = "rust_mnist"
+version = "0.1.0"
+authors = ["Liuhancheng <cn_lhc@qq.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ndarray = "0.12.1"
+mnist = "0.4.1"
+rulinalg = "0.4.2"
+autograd = "1.0.2"
+rand = "0.7.0"
+ndarray-npy = "0.4.0"
+clap = "3.0.0-beta.2"
+
